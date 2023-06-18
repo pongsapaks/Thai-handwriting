@@ -45,6 +45,60 @@ import statistics
 import lightgbm as lgb
 from sklearn.ensemble import RandomForestClassifier
 
+def detect_and_crop_handwriting(image):
+    _, binary = cv2.threshold(image, 127, 255, cv2.THRESH_BINARY_INV)
+    contours, _ = cv2.findContours(
+        binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    height, width = image.shape[:2]
+    center_x = width // 2
+    center_y = height // 2
+    max_offset = -1
+    max_offset_contour = None
+
+    for contour in contours:
+        M = cv2.moments(contour)
+        if M["m00"] == 0:
+            cX = 0
+            cY = 0
+        else:
+            cX = int(M["m10"] / M["m00"])
+            cY = int(M["m01"] / M["m00"])
+
+        offset = np.sqrt((center_x - cX) ** 2 + (center_y - cY) ** 2)
+
+        if offset > max_offset:
+            max_offset = offset
+            max_offset_contour = contour
+
+    if max_offset_contour is not None:
+        x, y, w, h = cv2.boundingRect(max_offset_contour)
+
+        aspect_ratio = float(w) / h
+
+        if aspect_ratio > 1:
+            y_padding = int((w - h) / 2)
+            x_padding = 0
+        else:
+            x_padding = int((h - w) / 2)
+            y_padding = 0
+
+        x -= x_padding
+        w += 2 * x_padding
+        y -= y_padding
+        h += 2 * y_padding
+
+        x = max(x, 0)
+        w = min(w, width)
+        y = max(y, 0)
+        h = min(h, height)
+
+        cropped_image = image[y:y + h, x:x + w]
+
+        return cropped_image
+
+    else:
+        print('No handwriting detected in the image.')
+        return None
 
 # Functions to handle dataset
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
@@ -67,10 +121,12 @@ def make_dataset(size=28):
     Y = []
 
     for image_path in image_files:
-        img = cv2.imread(image_path)
-        img = Image.open(image_path).convert("L")
-        img = ImageOps.invert(img)
-        img = img.resize((size, size))
+        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        img = detect_and_crop_handwriting(img)
+        if img is None:
+            print('No handwriting detected in', image_path)
+            continue
+        img = cv2.resize(img, (size, size))
         label = os.path.basename(os.path.dirname(image_path))
         x = np.array(img)
         X.append(x)
@@ -99,10 +155,12 @@ def make_dataset2(size=28):
     Y = []
 
     for image_path in image_files:
-        img = cv2.imread(image_path)
-        img = Image.open(image_path).convert("L")
-        img = ImageOps.invert(img)
-        img = img.resize((size, size))
+        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        img = detect_and_crop_handwriting(img)
+        if img is None:
+            print('No handwriting detected in', image_path)
+            continue
+        img = cv2.resize(img, (size, size))
         label = os.path.basename(os.path.dirname(image_path))
         x = np.array(img)
         X.append(x)
@@ -480,19 +538,29 @@ def update_output(n_clicks, json_data):
         mask = parse_jsonstring(json_data)
         image = Image.fromarray(mask.astype('uint8') * 255)
 
-        # Define the crop coordinates here based on your requirements
-        left = 0
-        top = 0
-        right = 300
-        bottom = 200
+        # Convert PIL image to OpenCV format
+        open_cv_image = np.array(image)
+        
+        # Convert RGB to BGR if the image is colored (3 channels)
+        if len(open_cv_image.shape) == 3:
+            open_cv_image = open_cv_image[:, :, ::-1].copy()
 
-        # Crop the image
-        cropped_image = image.crop((left, top, right, bottom))
-        cropped_image.save(image_path)
+        # Use the detect_and_crop_handwriting function to crop the image
+        cropped_image = detect_and_crop_handwriting(open_cv_image)
+        
+        # Handle case when no handwriting is detected
+        if cropped_image is None:
+            return 'Handwriting not detected. Please draw on the canvas before predicting.'
+        
+        # Convert cropped image back to PIL for saving
+        pil_cropped_image = Image.fromarray(cropped_image)
+
+        pil_cropped_image.save(image_path)
         print(f"Image saved as {image_path}")  # This line will print the image save info
 
-        prediction = predict_image(cropped_image)
+        prediction = predict_image(pil_cropped_image)
         print("Prediction made:", prediction)  # This line will print the prediction
+
         return html.Div([
             'Predicted number: {}'.format(prediction),
             html.Img(src=image_path)  # Display the image that was used for prediction
@@ -500,8 +568,6 @@ def update_output(n_clicks, json_data):
     else:
         print("No data received")  # This line will print if json_data is None
         return 'Please draw on the canvas before predicting'
-
-
 
     
 @app.callback(
