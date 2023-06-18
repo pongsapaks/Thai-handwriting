@@ -40,6 +40,10 @@ from sklearn.preprocessing import LabelBinarizer, StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import roc_curve, auc
 from dash_canvas.utils import parse_jsonstring
+from collections import Counter
+import statistics
+import lightgbm as lgb
+from sklearn.ensemble import RandomForestClassifier
 
 
 # Functions to handle dataset
@@ -50,7 +54,7 @@ def make_dataset(size=28):
     repo_dir = "Thai-handwriting"
     subprocess.run(["git", "clone", repo_url, repo_dir])
 
-    image_dir = os.path.join(repo_dir, "raw2")
+    image_dir = os.path.join(repo_dir, "raw")
     image_files = []
     for root, dirs, files in os.walk(image_dir):
         for file in files:
@@ -82,7 +86,7 @@ def make_dataset2(size=28):
     repo_dir = "Thai-handwriting"
     subprocess.run(["git", "clone", repo_url, repo_dir])
 
-    image_dir = os.path.join(repo_dir, "raw2")
+    image_dir = os.path.join(repo_dir, "raw")
     image_files = []
     for root, dirs, files in os.walk(image_dir):
         for file in files:
@@ -125,16 +129,34 @@ def make_dataset2(size=28):
 
     X_train, X_test, y_train, y_test = train_test_split(X_pca, Y, test_size=0.2, random_state=42)
 
-    sv = SVC(C=10, gamma=0.001, kernel='rbf')
-    sv.fit(X_train, y_train)
-    pred = sv.predict(X_test)
-    accuracy = accuracy_score(y_test, pred)
-    print(f"Model accuracy: {accuracy}")
+    # LightGBM Model
+    lgb_fix = lgb.LGBMClassifier(n_estimators= 400, colsample_bytree= 0.7, max_depth= 15, num_leaves= 50,
+                                 reg_alpha= 1.3, reg_lambda= 1.1, min_split_gain= 0.3, subsample= 0.8, subsample_freq= 20)
+    lgb_fix.fit(X_train, y_train)
+    with open("model_lgb.pkl", "wb") as f:
+        pickle.dump(lgb_fix, f)
 
-    with open("model.pkl", "wb") as f:
-        pickle.dump(sv, f)
+    # Random Forest Model
+    rf_fix = RandomForestClassifier(n_estimators=200, max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42)
+    rf_fix.fit(X_train, y_train)
+    with open("model_rf.pkl", "wb") as f:
+        pickle.dump(rf_fix, f)
+
+    # SVM Model
+    sv_fix = SVC(C=10,gamma=0.001,kernel='rbf', probability=True)
+    sv_fix.fit(X_train, y_train)
+    with open("model_sv.pkl", "wb") as f:
+        pickle.dump(sv_fix, f)
+
+    # Evaluate each model separately
+    for model, name in [(lgb_fix, "LightGBM"), (rf_fix, "Random Forest"), (sv_fix, "SVM")]:
+        pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, pred)
+        print(f"{name} Model accuracy: {accuracy}")
+
     with open("pca.pkl", "wb") as f:
         pickle.dump(pca, f)
+
 make_dataset2()
 
 def load_dataset(size=28):
@@ -173,17 +195,20 @@ def preprocess_image(image_path, size=28):
     img_arr = np.array(img)
     return img_arr
 
-def predict_image(image, model_path="model.pkl", pca_path="pca.pkl", std_params_path="std_params.pkl", size=28):
-    # Load the model, pca, and standardization parameters from files
-    with open(model_path, 'rb') as f:
-        model = pickle.load(f)
+def predict_image(image, model_paths=["model_lgb.pkl", "model_rf.pkl", "model_sv.pkl"], 
+                  pca_path="pca.pkl", std_params_path="std_params.pkl", size=28):
+    # Load the models, pca, and standardization parameters from files
+    models = []
+    for model_path in model_paths:
+        with open(model_path, 'rb') as f:
+            models.append(pickle.load(f))
+            
     with open(pca_path, 'rb') as f:
         pca = pickle.load(f)
     with open(std_params_path, 'rb') as f:
         X_mean, X_std = pickle.load(f)
 
     # Preprocess the image
-    # If image is not a path but already an image, skip this line
     if isinstance(image, str):
         image = Image.open(image).convert("L")
     image = ImageOps.invert(image)
@@ -192,9 +217,16 @@ def predict_image(image, model_path="model.pkl", pca_path="pca.pkl", std_params_
 
     # Flatten and standardize the image
     reshaped_image = img_arr.reshape((1, -1))
+
+    # Print debug info
+    print("reshaped_image shape:", reshaped_image.shape)
+    
     # Avoid division by zero by adding a small constant to X_std
     epsilon = 1e-8
     standardized_image = (reshaped_image - np.array(X_mean).reshape(1,-1)) / (np.array(X_std).reshape(1,-1) + epsilon)
+
+    # Print debug info
+    print("standardized_image shape:", standardized_image.shape)
 
     if np.isnan(standardized_image).any():
         print("standardized_image still contains NaN values!")
@@ -202,10 +234,17 @@ def predict_image(image, model_path="model.pkl", pca_path="pca.pkl", std_params_
     # Apply PCA
     transformed_image = pca.transform(standardized_image)
 
-    # Predict the label
-    prediction = model.predict(transformed_image)
+    # Print debug info
+    print("transformed_image shape:", transformed_image.shape)
 
-    return prediction
+    # Predict the label using all models and find the mode of the predictions
+    predictions = [model.predict(transformed_image)[0] for model in models]
+    prediction_counts = Counter(predictions)
+    most_common_prediction, _ = prediction_counts.most_common(1)[0]
+
+    return most_common_prediction
+
+
 
 make_dataset()
 
