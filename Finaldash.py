@@ -46,8 +46,8 @@ from dash_canvas.utils import parse_jsonstring
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 def make_dataset(size=28):
-    repo_url = "https://github.com/pongsapaks/Thai-handwrittingnumberproject.git"
-    repo_dir = "Thai-handwrittingnumberproject"
+    repo_url = "https://github.com/pongsapaks/Thai-handwriting.git"
+    repo_dir = "Thai-handwriting"
     subprocess.run(["git", "clone", repo_url, repo_dir])
 
     image_dir = os.path.join(repo_dir, "raw2")
@@ -78,8 +78,8 @@ def make_dataset(size=28):
     pickle.dump(data, open("thainumber_{}.pkl".format(size), "wb"), protocol=2)
 
 def make_dataset2(size=28):
-    repo_url = "https://github.com/pongsapaks/Thai-handwrittingnumberproject.git"
-    repo_dir = "Thai-handwrittingnumberproject"
+    repo_url = "https://github.com/pongsapaks/Thai-handwriting.git"
+    repo_dir = "Thai-handwriting"
     subprocess.run(["git", "clone", repo_url, repo_dir])
 
     image_dir = os.path.join(repo_dir, "raw2")
@@ -427,7 +427,6 @@ app.layout = dbc.Container([
     ], align="start"),
 ], fluid=True)
 
-
 @app.callback(
     dash.dependencies.Output('prediction', 'children'),
     [dash.dependencies.Input('button_predict', 'n_clicks')],
@@ -441,10 +440,19 @@ def update_output(n_clicks, json_data):
         image_path = f"drawn_image_{n_clicks}.png"
         mask = parse_jsonstring(json_data)
         image = Image.fromarray(mask.astype('uint8') * 255)
-        image.save(image_path)
+
+        # Define the crop coordinates here based on your requirements
+        left = 0
+        top = 0
+        right = 300
+        bottom = 200
+
+        # Crop the image
+        cropped_image = image.crop((left, top, right, bottom))
+        cropped_image.save(image_path)
         print(f"Image saved as {image_path}")  # This line will print the image save info
 
-        prediction = predict_image(image)
+        prediction = predict_image(cropped_image)
         print("Prediction made:", prediction)  # This line will print the prediction
         return html.Div([
             'Predicted number: {}'.format(prediction),
@@ -453,6 +461,9 @@ def update_output(n_clicks, json_data):
     else:
         print("No data received")  # This line will print if json_data is None
         return 'Please draw on the canvas before predicting'
+
+
+
     
 @app.callback(
     dash.dependencies.Output('roc-curve', 'figure'),
