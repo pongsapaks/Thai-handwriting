@@ -103,20 +103,12 @@ def detect_and_crop_handwriting(image):
 # Functions to handle dataset
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
-# def make_dataset2(size=28):
-#     repo_url = "https://github.com/pongsapaks/Thai-handwriting.git"
-#     repo_dir = "Thai-handwriting"
-#     subprocess.run(["git", "clone", repo_url, repo_dir])
-
-#     image_dir = os.path.join(repo_dir, "raw")
-#     image_files = []
-#     for root, dirs, files in os.walk(image_dir):
-#         for file in files:
-#             if file.endswith(".png"):
-#                 image_files.append(os.path.join(root, file))
-
 def make_dataset(size=28):
-    image_dir = "raw"  # Directly use the relative path
+    repo_url = "https://github.com/pongsapaks/Thai-handwriting.git"
+    repo_dir = "Thai-handwriting"
+    subprocess.run(["git", "clone", repo_url, repo_dir])
+
+    image_dir = os.path.join(repo_dir, "raw")
     image_files = []
     for root, dirs, files in os.walk(image_dir):
         for file in files:
@@ -146,9 +138,11 @@ def make_dataset(size=28):
     pickle.dump(data, open("thainumber_{}.pkl".format(size), "wb"), protocol=2)
 
 def make_dataset2(size=28):
-    # No need to clone or pull the repo now as you are already in it.
+    repo_url = "https://github.com/pongsapaks/Thai-handwriting.git"
+    repo_dir = "Thai-handwriting"
+    subprocess.run(["git", "clone", repo_url, repo_dir])
 
-    image_dir = "raw"  # Directly use the relative path
+    image_dir = os.path.join(repo_dir, "raw")
     image_files = []
     for root, dirs, files in os.walk(image_dir):
         for file in files:
